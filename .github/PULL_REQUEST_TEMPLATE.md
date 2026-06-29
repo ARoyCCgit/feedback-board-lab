@@ -1,7 +1,7 @@
 ## Submission — Production hardening
 
-**Your name:** <!-- e.g. Jane Doe -->
-**Tool used:** <!-- Cursor / Roo Code -->
+**Your name:** <!-- e.g. Arnab ROy-->
+**Tool used:** <!-- Roo Code -->
 
 ### What I changed
 <!-- 1–3 lines on how you hardened the app -->
