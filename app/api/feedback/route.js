@@ -1,63 +1,79 @@
 import { NextResponse } from 'next/server';
 import { readAll, writeAll } from '../../../lib/store';
+import { feedbackSchema } from '../../../lib/validation';
 
-// FLAW #1: Hardcoded secret committed to source — admin key used for... nothing, really
-const ADMIN_KEY = 'sk-admin-12345'; // admin key
-
-// formatRelativeTime is imported from our date utils
-// FLAW #6 (hallucination artifact): This helper was referenced in AI-generated code but
-// never actually defined or imported. Guarded with typeof check so the app still runs.
-// The call below always falls through to the raw value because the function doesn't exist.
+// FLAW #1 FIX: Read admin key from environment; throw if missing rather than failing silently.
+const ADMIN_KEY = process.env.ADMIN_KEY;
+if (!ADMIN_KEY) {
+  throw new Error('ADMIN_KEY environment variable is required but was not set.');
+}
 
 export async function GET() {
   const items = readAll();
-  const formatted = items.map((item) => ({
-    ...item,
-    // from our date utils
-    displayTime: typeof formatRelativeTime === 'function'
-      ? formatRelativeTime(item.createdAt)
-      : item.createdAt,
-  }));
-  return NextResponse.json(formatted);
+  return NextResponse.json(items);
 }
 
 export async function POST(request) {
-  const body = await request.json();
-  const items = readAll();
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-  // FLAW #2: No input validation — name/text not checked for type, length, or content
+  // FLAW #2 FIX: Validate input with zod; reject invalid requests with 400.
+  const parsed = feedbackSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const items = readAll();
   const newItem = {
     id: Date.now().toString(),
-    name: body.name,
-    text: body.text,
+    name: parsed.data.name,
+    text: parsed.data.text,
     createdAt: new Date().toISOString(),
   };
-
   items.push(newItem);
 
-  // FLAW #5: Silent failure — if the write fails, the error is swallowed entirely
+  // FLAW #5 FIX: Log the error and return a proper 500 response on write failure.
   try {
     writeAll(items);
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to persist feedback:', e);
+    return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 });
+  }
 
   return NextResponse.json(newItem, { status: 201 });
 }
 
 export async function DELETE(request) {
-  const body = await request.json();
-
-  // FLAW #4: Trusts isAdmin from the client body — no real authentication
-  if (!body.isAdmin) {
+  // FLAW #4 FIX: Enforce auth server-side via Authorization header against process.env.ADMIN_KEY.
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || authHeader !== `Bearer ${ADMIN_KEY}`) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
   const items = readAll();
   const updated = items.filter((item) => item.id !== body.id);
 
-  // FLAW #5: Same silent failure pattern on delete write
+  // FLAW #5 FIX: Log the error and return a proper 500 response on write failure.
   try {
     writeAll(updated);
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to persist feedback deletion:', e);
+    return NextResponse.json({ error: 'Failed to delete feedback' }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

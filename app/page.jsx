@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from 'react';
 
-// FLAW #4: Authorization decided entirely on the client — anyone can flip this to true
-const isAdmin = true;
-
 export default function FeedbackPage() {
   const [feedbackList, setFeedbackList] = useState([]);
   const [name, setName] = useState('');
@@ -24,7 +21,6 @@ export default function FeedbackPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setStatus('Submitting...');
-    // FLAW #2: No client-side validation either — any shape/length goes
     await fetch('/api/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,16 +29,6 @@ export default function FeedbackPage() {
     setName('');
     setText('');
     setStatus('Submitted!');
-    loadFeedback();
-  }
-
-  async function handleDelete(id) {
-    // FLAW #4: Sends isAdmin from client; server trusts it without real auth
-    await fetch('/api/feedback', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, isAdmin }),
-    });
     loadFeedback();
   }
 
@@ -55,6 +41,7 @@ export default function FeedbackPage() {
           placeholder="Your name"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          maxLength={100}
           style={{ padding: '0.5rem', fontSize: '1rem' }}
         />
         <textarea
@@ -62,6 +49,7 @@ export default function FeedbackPage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={4}
+          maxLength={2000}
           style={{ padding: '0.5rem', fontSize: '1rem' }}
         />
         <button type="submit" style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}>
@@ -87,16 +75,8 @@ export default function FeedbackPage() {
             <span style={{ color: '#888', marginLeft: '1rem', fontSize: '0.85rem' }}>
               {item.createdAt}
             </span>
-            {/* FLAW #3: Stored XSS — item.text rendered as raw HTML */}
-            <p dangerouslySetInnerHTML={{ __html: item.text }} />
-            {isAdmin && (
-              <button
-                onClick={() => handleDelete(item.id)}
-                style={{ background: '#c00', color: '#fff', border: 'none', padding: '0.25rem 0.75rem', cursor: 'pointer', borderRadius: '3px' }}
-              >
-                Delete
-              </button>
-            )}
+            {/* FLAW #3 FIX: Render feedback as plain text — never interpret user content as HTML. */}
+            <p>{item.text}</p>
           </li>
         ))}
       </ul>
